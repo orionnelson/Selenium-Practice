@@ -10,7 +10,7 @@ from tqdm import tqdm
 import zipfile
 
 fb_path = "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
-geo_path = "E:\\Selenium-Practice\\Selenium-Practice\\geckodriver.exe"
+geo_path = os.path.join(os.path.dirname(__file__),"geckodriver.exe")
 serv = Service(geo_path)
 firefox_options = Firefox_Options()
 firefox_options.binary = fb_path
