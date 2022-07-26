@@ -8,13 +8,14 @@ import time
 import requests
 from tqdm import tqdm
 import zipfile
+import concurrent.futures
+from multiprocessing import current_process
 
 fb_path = "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
 geo_path = os.path.join(os.path.dirname(__file__),"geckodriver.exe")
 serv = Service(geo_path)
 firefox_options = Firefox_Options()
 firefox_options.binary = fb_path
-#driver = webdriver.Firefox(service=serv,options=firefox_options)
 anime_url_base="https://4anime.gg"
 
 # returns the current shows in episodes.txt as a dict split by showurl:episode
@@ -64,7 +65,6 @@ def download_file(path,url,local_filename):
     return local_filename
 
 def download_subtitles(browser, show, episode, s_path):
-    baseurl =  "https://www.opensubtitles.org"
     show = show.rsplit('-',1)[0]
     url = "https://www.opensubtitles.org/en/search2?MovieName=%s&action=search&SubLanguageID=eng&Episode=%s" % (show, episode)
     print("Downloading Subtitles for %s Episode %s" % (show, episode))
@@ -97,16 +97,16 @@ def download_show(url,show, episode):
         os.makedirs(s_path)
     browser = get_browser()
     main_window = browser.current_window_handle
+    time.sleep(2)
+    browser.refresh()
     link = get_download_server(browser, url, main_window)
-    #print(link)
-    download_file(s_path,link,str(episode)+".mp4")
-    #downloadthe Subtitles for the Show default English
     try:
         download_subtitles(browser, show, episode, s_path)
     except:
         print("No Subtitles Found Try Searching on https://subscene.com/")
         pass
     #url = "https://www.opensubtitles.org/en/search2?MovieName=black-summoner&action=search&SubLanguageID=eng&Episode=2"
+    return [s_path,link,"%s.mp4" % episode]
 
 
 
@@ -122,8 +122,6 @@ def get_download_server(browser, url, main_window):
     time.sleep(2)
     player_servers = browser.find_element('class name','player-servers')
     iframe_holder = browser.find_element('class name','anime_player')
-    #print(player_servers.get_attribute('innerHTML'))
-    #print(iframe_holder.get_attribute('innerHTML'))
     soup = BeautifulSoup(iframe_holder.get_attribute('innerHTML'),'html.parser')
     frames = [(frame.get('src')) for frame in soup.find_all('iframe')]
     frame = frames[-1]
@@ -144,27 +142,22 @@ def get_download_server(browser, url, main_window):
     #print(contentbox.get_attribute('innerHTML'),'html.parser')
     soup = BeautifulSoup(contentbox.get_attribute('innerHTML'),'html.parser')
     download_functions = [(frame.get('onclick')) for frame in soup.find_all('a')]
-    high_quality_download = [item for item in download_functions if "'h'" in item][-1]
-    print("Retrieved High Quality Download Link")
-    #print(high_quality_download)
+    high_quality_download = [item for item in download_functions if "'h'" in item]
+    if high_quality_download:
+        high_quality_download = high_quality_download[-1]
+    else:
+        high_quality_download = [item for item in download_functions if "'n'" in item][-1]
     browser.execute_script(high_quality_download)
     time.sleep(3)
     button = browser.find_element('class name','g-recaptcha')
     browser.execute_script("arguments[0].click();",button)
-    print("Beat Broken Captcha")
     time.sleep(3)
-    # ASSUME WE BEAT THE CAPCHA WITHOUT USING OPENCV
+    # Passed the "Captcha" lol
     final_span_page = browser.find_element('class name','contentbox')
     soup = BeautifulSoup(final_span_page.get_attribute('innerHTML'),'html.parser')
     download_link = [(frame.get('href')) for frame in soup.find_all('a')][-1]
     print("Returned Download Link")
     return download_link
-
-
-    #print(frames)
-
-
-    #return download_server
 
 
 def getEpisodes(url):
@@ -173,12 +166,9 @@ def getEpisodes(url):
     url = url
     browser.get(url)
     episodes = get_episodes_from_anime(browser)
-    #print(episodes)
-    #print(episodes.text)
     soup = BeautifulSoup(episodes.get_attribute('innerHTML'),'html.parser')
     links = [(anime_url_base + links.get('href')) for links in soup.find_all('a')]
     episode_dict =  {episodes.text.splitlines()[i]: links[i] for i in range(len(links))}
-    #print(episode_dict)
     return episode_dict
 # Write Shows TO 
 def output_shows(show_dict):
@@ -188,11 +178,17 @@ def output_shows(show_dict):
             #print(output.strip())
             f.write(output.encode("utf-8"))
 
-
+def h_download(args):
+    return download_file(args[0],args[1],args[2])
 
 def main():
     #Iterate through the list of shows and download episodes that have not allready been downloaded
     #Load Show List And Progress
+    q = []
+    process = current_process()
+    # If you are not the main process, then you are a worker process and should not do anything
+    if not process.name == "MainProcess":
+        return []
     shows = get_shows()
     for show in shows.keys():
         print("Checking %s" % show)
@@ -204,13 +200,20 @@ def main():
         #queLinks means we need to download the episodes 
         qlinks = [episodes[ep] for ep in e2d]
         if qlinks:
-            print("Downloading Episodes:" + str(" ".join(e2d)))
+            print("Downloading Episode(s) : " + str(" ".join(e2d)))
+            #q = []
             for link in qlinks:
                 #print(shows[show])
                 #print(type(shows[show]))
-                download_show(link,show,e2d.pop(0))
+                q.append(download_show(link,show,e2d.pop(0)))
                 shows[show] = str(int(shows[show])+ 1)
                 #print(shows[show])
         output_shows(shows)
-    
-main()
+    return q
+# Concurrent Futures Creates Multiple Kids that run main() in parallel
+q = main()
+if q:
+    print("Downloading %s Show(s) with Multiprocessing" % len(q))
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        executor.map(h_download, q)
+    executor.shutdown(wait=True)
