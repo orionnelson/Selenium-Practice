@@ -64,7 +64,6 @@ def download_file(path,url,local_filename):
     return local_filename
 
 def download_subtitles(browser, show, episode, s_path):
-    
     baseurl =  "https://www.opensubtitles.org"
     show = show.rsplit('-',1)[0]
     url = "https://www.opensubtitles.org/en/search2?MovieName=%s&action=search&SubLanguageID=eng&Episode=%s" % (show, episode)
@@ -102,7 +101,11 @@ def download_show(url,show, episode):
     #print(link)
     download_file(s_path,link,str(episode)+".mp4")
     #downloadthe Subtitles for the Show default English
-    download_subtitles(browser, show, episode, s_path)
+    try:
+        download_subtitles(browser, show, episode, s_path)
+    except:
+        print("No Subtitles Found Try Searching on https://subscene.com/")
+        pass
     #url = "https://www.opensubtitles.org/en/search2?MovieName=black-summoner&action=search&SubLanguageID=eng&Episode=2"
 
 
@@ -193,10 +196,11 @@ def main():
     shows = get_shows()
     for show in shows.keys():
         print("Checking %s" % show)
+        #print(shows[show])
         episodes = getEpisodes(anime_url_base+"/"+show)
         #print(episodes)
         #If the show episode keys surpass the file episodes watched then download the new episodes
-        e2d = [ep for ep in episodes.keys() if ep > shows[show]]
+        e2d = [ep for ep in episodes.keys() if int(ep) > int(shows[show])]
         #queLinks means we need to download the episodes 
         qlinks = [episodes[ep] for ep in e2d]
         if qlinks:
