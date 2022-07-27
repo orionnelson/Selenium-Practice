@@ -10,6 +10,7 @@ from tqdm import tqdm
 import zipfile
 import concurrent.futures
 from multiprocessing import current_process
+import random
 
 fb_path = "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
 geo_path = os.path.join(os.path.dirname(__file__),"geckodriver.exe")
@@ -91,22 +92,33 @@ def download_subtitles(browser, show, episode, s_path):
 
 
 def download_show(url,show, episode):
+    retries = 6
     cwdir = os.path.dirname(__file__)
     s_path = os.path.join(cwdir,show)
     if not os.path.exists(s_path):
         os.makedirs(s_path)
     browser = get_browser()
     main_window = browser.current_window_handle
-    time.sleep(2)
-    browser.refresh()
-    link = get_download_server(browser, url, main_window)
+    while(retries>0):
+        try:
+            browser.refresh()
+            time.sleep(random.randint(4, 8))
+            link = get_download_server(browser, url, main_window)
+            if link:
+                retries = 0
+        except:
+            retries = retries - 1
+            print("Retrying %s with %s retries remaining" % (episode,retries))
     try:
         download_subtitles(browser, show, episode, s_path)
     except:
         print("No Subtitles Found Try Searching on https://subscene.com/")
         pass
     #url = "https://www.opensubtitles.org/en/search2?MovieName=black-summoner&action=search&SubLanguageID=eng&Episode=2"
-    return [s_path,link,"%s.mp4" % episode]
+    if link:
+        return [s_path,link,"%s.mp4" % episode]
+    else:
+        return []
 
 
 
@@ -179,7 +191,10 @@ def output_shows(show_dict):
             f.write(output.encode("utf-8"))
 
 def h_download(args):
-    return download_file(args[0],args[1],args[2])
+    if args:
+        return download_file(args[0],args[1],args[2])
+    else:
+        return ""
 
 def main():
     #Iterate through the list of shows and download episodes that have not allready been downloaded
@@ -205,7 +220,10 @@ def main():
             for link in qlinks:
                 #print(shows[show])
                 #print(type(shows[show]))
-                q.append(download_show(link,show,e2d.pop(0)))
+                try:
+                    q.append(download_show(link,show,e2d.pop(0)))
+                except:
+                    pass
                 shows[show] = str(int(shows[show])+ 1)
                 #print(shows[show])
         output_shows(shows)
@@ -217,3 +235,5 @@ if q:
     with concurrent.futures.ProcessPoolExecutor() as executor:
         executor.map(h_download, q)
     executor.shutdown(wait=True)
+browser = get_browser()
+browser.close()
